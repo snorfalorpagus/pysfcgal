@@ -1,4 +1,4 @@
-from _sfcgal import ffi, lib
+from ._sfcgal import ffi, lib
 
 # this must be called before anything else
 lib.sfcgal_init()
@@ -9,14 +9,25 @@ def sfcgal_version():
     return version
 
 def read_wkt(wkt):
+    return wrap_geom(_read_wkt(wkt))
+
+def _read_wkt(wkt):
     wkt = bytes(wkt, encoding="utf-8")
     return lib.sfcgal_io_read_wkt(wkt, len(wkt))
 
 def write_wkt(geom):
-    buf = ffi.new("char**")
-    length = ffi.new("size_t*")
-    lib.sfcgal_geometry_as_text(geom, buf, length)
-    return ffi.string(buf[0], length[0]).decode("utf-8")
+    if isinstance(geom, Geometry):
+        geom = geom._geom
+    try:
+        buf = ffi.new("char**")
+        length = ffi.new("size_t*")
+        lib.sfcgal_geometry_as_text(geom, buf, length)
+        wkt = ffi.string(buf[0], length[0]).decode("utf-8")
+    finally:
+        # we're responsible for free'ing the memory
+        if not buf[0] == ffi.NULL:
+            lib.free(buf[0])
+    return wkt
 
 class Geometry:
     def distance(self, other):
@@ -49,6 +60,12 @@ class Geometry:
             return write_wkt(self._geom)
         return locals()
     wkt = property(**wkt())
+
+    def __del__(self):
+        # TODO: only free the geometry if it is "owned" by the class (this may
+        # not be the case in the future, if we create a wrapper around
+        # geometries inside a geometry collection)
+        lib.sfcgal_geometry_delete(self._geom)
 
 class Point(Geometry):
     def __init__(self, x, y, z=None):
@@ -112,6 +129,10 @@ geom_type_to_cls = {
 }
 
 def shape(geometry):
+    """Creates a PySFCGAL geometry from a GeoJSON-like geometry"""
+    return wrap_geom(_shape(geometry))
+
+def _shape(geometry):
     """Creates a SFCGAL geometry from a GeoJSON-like geometry"""
     geom_type = geometry["type"].lower()
     try:
@@ -120,10 +141,10 @@ def shape(geometry):
         raise ValueError("Unknown geometry type: {}".format(geometry["type"]))
     if geom_type == "geometrycollection":
         geometries = geometry["geometries"]
-        return wrap_geom(factory(geometries))
+        return factory(geometries)
     else:
         coordinates = geometry["coordinates"]
-        return wrap_geom(factory(coordinates))
+        return factory(coordinates)
 
 def point_from_coordinates(coordinates):
     if len(coordinates) == 2:
@@ -171,7 +192,7 @@ def multipolygon_from_coordinates(coordinates):
 def geometry_collection_from_coordinates(geometries):
     collection = lib.sfcgal_geometry_collection_create()
     for geometry in geometries:
-        geom = shape(geometry)._geom
+        geom = _shape(geometry)
         lib.sfcgal_geometry_collection_add_geometry(collection, geom)
     return collection
 
@@ -270,7 +291,10 @@ def geometrycollection_to_coordinates(geometry):
     geoms = []
     for n in range(0, num_geoms):
         geom = lib.sfcgal_geometry_collection_geometry_n(geometry, n)
-        geoms.append(mapping(wrap_geom(geom))) # TODO: inefficient
+        geom_type_id = lib.sfcgal_geometry_type_id(geom)
+        geom_type = geom_types_r[geom_type_id]
+        coords = factories_type_to_coords[geom_type](geom)
+        geoms.append({"type": geom_type, "coordinates": coords})
     return geoms
 
 factories_type_to_coords = {
