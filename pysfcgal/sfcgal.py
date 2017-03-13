@@ -12,6 +12,105 @@ def read_wkt(wkt):
     wkt = bytes(wkt, encoding="utf-8")
     return lib.sfcgal_io_read_wkt(wkt, len(wkt))
 
+def write_wkt(geom):
+    buf = ffi.new("char**")
+    length = ffi.new("size_t*")
+    lib.sfcgal_geometry_as_text(geom, buf, length)
+    return ffi.string(buf[0], length[0]).decode("utf-8")
+
+class Geometry:
+    def distance(self, other):
+        return lib.sfcgal_geometry_distance(self._geom, other._geom)
+
+    def distance_3d(self, other):
+        return lib.sfcgal_geometry_distance_3d(self._geom, other._geom)
+
+    def area():
+        def fget(self):
+            return lib.sfcgal_geometry_area(self._geom)
+        return locals()
+    area = property(**area())
+
+    def is_empty():
+        def fget(self):
+            return lib.sfcgal_geometry_is_empty(self._geom)
+        return locals()
+    is_empty = property(**is_empty())
+
+    def intersects(self, other):
+        return lib.sfcgal_geometry_intersects(self._geom, other._geom) == 1
+
+    def intersection(self, other):
+        geom = lib.sfcgal_geometry_intersection(self._geom, other._geom)
+        return wrap_geom(geom)
+
+    def wkt():
+        def fget(self):
+            return write_wkt(self._geom)
+        return locals()
+    wkt = property(**wkt())
+
+class Point(Geometry):
+    def __init__(self, x, y, z=None):
+        # TODO: support coordinates as a list
+        if z is None:
+            self._geom = point_from_coordinates([x, y])
+        else:
+            self._geom = point_from_coordinates([x, y, z])
+
+    def x():
+        def fget(self):
+            return lib.sfcgal_point_x(self._geom)
+        return locals()
+    x = property(**x())
+
+    def y():
+        def fget(self):
+            return lib.sfcgal_point_y(self._geom)
+        return locals()
+    y = property(**y())
+
+class LineString(Geometry):
+    pass
+
+class Polygon(Geometry):
+    def __init__(self, exterior, interiors=None):
+        if interiors is None:
+            interiors = []
+        self._geom = polygon_from_coordinates([
+            exterior,
+            *interiors,
+        ])
+
+class MultiPoint(Geometry):
+    pass
+
+class MultiLineString(Geometry):
+    pass
+
+class MultiPolygon(Geometry):
+    pass
+
+class GeometryCollection(Geometry):
+    pass
+
+def wrap_geom(geom):
+    geom_type_id = lib.sfcgal_geometry_type_id(geom)
+    cls = geom_type_to_cls[geom_type_id]
+    geometry = object.__new__(cls)
+    geometry._geom = geom
+    return geometry
+
+geom_type_to_cls = {
+    lib.SFCGAL_TYPE_POINT: Point,
+    lib.SFCGAL_TYPE_LINESTRING: LineString,
+    lib.SFCGAL_TYPE_POLYGON: Polygon,
+    lib.SFCGAL_TYPE_MULTIPOINT: MultiPoint,
+    lib.SFCGAL_TYPE_MULTILINESTRING: MultiLineString,
+    lib.SFCGAL_TYPE_MULTIPOLYGON: MultiPolygon,
+    lib.SFCGAL_TYPE_GEOMETRYCOLLECTION: GeometryCollection,
+}
+
 def shape(geometry):
     """Creates a SFCGAL geometry from a GeoJSON-like geometry"""
     geom_type = geometry["type"].lower()
@@ -21,10 +120,10 @@ def shape(geometry):
         raise ValueError("Unknown geometry type: {}".format(geometry["type"]))
     if geom_type == "geometrycollection":
         geometries = geometry["geometries"]
-        return factory(geometries)
+        return wrap_geom(factory(geometries))
     else:
         coordinates = geometry["coordinates"]
-        return factory(coordinates)
+        return wrap_geom(factory(coordinates))
 
 def point_from_coordinates(coordinates):
     if len(coordinates) == 2:
@@ -72,7 +171,7 @@ def multipolygon_from_coordinates(coordinates):
 def geometry_collection_from_coordinates(geometries):
     collection = lib.sfcgal_geometry_collection_create()
     for geometry in geometries:
-        geom = shape(geometry)
+        geom = shape(geometry)._geom
         lib.sfcgal_geometry_collection_add_geometry(collection, geom)
     return collection
 
@@ -98,7 +197,7 @@ geom_types = {
 geom_types_r = dict((v,k) for k,v in geom_types.items())
 
 def mapping(geometry):
-    geom_type_id = lib.sfcgal_geometry_type_id(geometry)
+    geom_type_id = lib.sfcgal_geometry_type_id(geometry._geom)
     try:
         geom_type = geom_types_r[geom_type_id]
     except KeyError:
@@ -106,12 +205,12 @@ def mapping(geometry):
     if geom_type == "GeometryCollection":
         ret = {
             "type": geom_type,
-            "geometries": factories_type_to_coords[geom_type](geometry)
+            "geometries": factories_type_to_coords[geom_type](geometry._geom)
         }
     else:
         ret = {
             "type": geom_type,
-            "coordinates": factories_type_to_coords[geom_type](geometry)
+            "coordinates": factories_type_to_coords[geom_type](geometry._geom)
         }
     return ret
 
@@ -171,7 +270,7 @@ def geometrycollection_to_coordinates(geometry):
     geoms = []
     for n in range(0, num_geoms):
         geom = lib.sfcgal_geometry_collection_geometry_n(geometry, n)
-        geoms.append(mapping(geom))
+        geoms.append(mapping(wrap_geom(geom))) # TODO: inefficient
     return geoms
 
 factories_type_to_coords = {
