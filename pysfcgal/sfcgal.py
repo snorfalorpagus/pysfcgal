@@ -30,6 +30,8 @@ def write_wkt(geom):
     return wkt
 
 class Geometry:
+    _owned = True
+    
     def distance(self, other):
         return lib.sfcgal_geometry_distance(self._geom, other._geom)
 
@@ -62,10 +64,11 @@ class Geometry:
     wkt = property(**wkt())
 
     def __del__(self):
-        # TODO: only free the geometry if it is "owned" by the class (this may
-        # not be the case in the future, if we create a wrapper around
-        # geometries inside a geometry collection)
-        lib.sfcgal_geometry_delete(self._geom)
+        if self._owned:
+            # only free geometries owned by the class
+            # this isn't the case when working with geometries contained by
+            # a collection (e.g. a GeometryCollection)
+            lib.sfcgal_geometry_delete(self._geom)
 
 class Point(Geometry):
     def __init__(self, x, y, z=None):
@@ -99,23 +102,64 @@ class Polygon(Geometry):
             *interiors,
         ])
 
-class MultiPoint(Geometry):
+class GeometryCollectionBase(Geometry):
+    @property
+    def geoms(self):
+        return GeometrySequence(self)
+        
+    def __len__(self):
+        return len(self.geoms)
+
+class MultiPoint(GeometryCollectionBase):
     pass
 
-class MultiLineString(Geometry):
+class MultiLineString(GeometryCollectionBase):
     pass
 
-class MultiPolygon(Geometry):
+class MultiPolygon(GeometryCollectionBase):
     pass
 
-class GeometryCollection(Geometry):
+class GeometryCollection(GeometryCollectionBase):
     pass
 
-def wrap_geom(geom):
+class GeometrySequence:
+    def __init__(self, parent):
+        # keep reference to parent to avoid garbage collection
+        self._parent = parent
+
+    def __iter__(self):
+        for n in range(0, len(self)):
+            print(n)
+            yield wrap_geom(lib.sfcgal_geometry_collection_geometry_n(self._parent._geom, n), owned=False)
+
+    def __len__(self):
+        return lib.sfcgal_geometry_collection_num_geometries(self._parent._geom)
+    
+    def __get_geometry_n(self, n):
+        return wrap_geom(lib.sfcgal_geometry_collection_geometry_n(self._parent._geom, n), owned=False)
+
+    def __getitem__(self, key):
+        length = self.__len__()
+        if isinstance(key, int):
+            if key + length < 0 or key >= length:
+                raise IndexError("geometry sequence index out of range")
+            elif key < 0:
+                index = length + key
+            else:
+                index = key
+            return self.__get_geometry_n(index)
+        elif isinstance(key, slice):
+            geoms = [self.__get_geometry_n(index) for index in range(*key.indices(length))]
+            return geoms
+        else:
+            raise TypeError("geometry sequence indices must be integers or slices, not {}".format(key.__class__.__name__))
+
+def wrap_geom(geom, owned=True):
     geom_type_id = lib.sfcgal_geometry_type_id(geom)
     cls = geom_type_to_cls[geom_type_id]
     geometry = object.__new__(cls)
     geometry._geom = geom
+    geometry._owned = owned
     return geometry
 
 geom_type_to_cls = {

@@ -52,3 +52,21 @@ def test_intersection_polygon_polygon():
     polygon3 = polygon1.intersection(polygon2)
     assert(polygon3.area == 1.0)
     # TODO: check coordinates
+
+def test_geometry_collection():
+    geom = sfcgal.shape(geom_data.data["gc1"])
+    # length
+    assert(len(geom) == 3)
+    # iteration
+    for g in geom.geoms:
+        print(geom)
+    # indexing
+    g = geom.geoms[1]
+    assert(isinstance(g, LineString))
+    g = geom.geoms[-1]
+    assert(isinstance(g, Polygon))
+    gs = geom.geoms[0:2]
+    assert(len(gs) == 2)
+    # conversion to lists
+    gs = list(geom.geoms)
+    assert([g.__class__ for g in gs] == [Point, LineString, Polygon])
