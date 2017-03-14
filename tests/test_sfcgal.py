@@ -12,10 +12,10 @@ geometry_names, geometry_values = zip(*geom_data.data.items())
 
 @pytest.mark.parametrize("geometry", geometry_values, ids=geometry_names)
 def test_integrity(geometry):
+    """Test conversion from and to GeoJSON-like data"""
     geom = sfcgal.shape(geometry)
-    # data = sfcgal.mapping(geom)
-    # TODO: use a comparison that doesn't care about tuples vs lists
-    # assert(geometry == data)
+    data = sfcgal.mapping(geom)
+    assert(geometry == data)
 
 @pytest.mark.parametrize("geometry", geometry_values, ids=geometry_names)
 def test_wkt_write(geometry):
