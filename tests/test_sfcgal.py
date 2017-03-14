@@ -53,6 +53,17 @@ def test_intersection_polygon_polygon():
     assert(polygon3.area == 1.0)
     # TODO: check coordinates
 
+def test_line_string():
+    line = LineString([(0,0), (0, 1), (1, 1.5), (1, 2)])
+    assert(len(line) == 4)
+    
+    # test access to coordinates
+    coords = line.coords
+    assert(len(coords) == 4)
+    assert(coords[0] == [0.0,0.0])
+    assert(coords[-1] == [1.0,2.0])
+    assert(coords[0:2] == [[0.0,0.0], [0.0, 1.0]])
+
 def test_geometry_collection():
     geom = sfcgal.shape(geom_data.data["gc1"])
     # length

@@ -91,7 +91,15 @@ class Point(Geometry):
     y = property(**y())
 
 class LineString(Geometry):
-    pass
+    def __init__(self, coords):
+        self._geom = linestring_from_coordinates(coords)
+
+    def __len__(self):
+        return lib.sfcgal_linestring_num_points(self._geom)
+
+    @property
+    def coords(self):
+        return CoordinateSequence(self)
 
 class Polygon(Geometry):
     def __init__(self, exterior, interiors=None):
@@ -101,6 +109,38 @@ class Polygon(Geometry):
             exterior,
             *interiors,
         ])
+
+class CoordinateSequence:
+    def __init__(self, parent):
+        # keep reference to parent to avoid garbage collection
+        self._parent = parent
+
+    def __len__(self):
+        return self._parent.__len__()
+
+    def __iter__(self):
+        length = self.__len__()
+        for n in range(0, length):
+            yield self.__get_coord_n(n)
+
+    def __get_coord_n(self, n):
+        return point_to_coordinates(lib.sfcgal_linestring_point_n(self._parent._geom, n))
+
+    def __getitem__(self, key):
+        length = self.__len__()
+        if isinstance(key, int):
+            if key + length < 0 or key >= length:
+                raise IndexError("geometry sequence index out of range")
+            elif key < 0:
+                index = length + key
+            else:
+                index = key
+            return self.__get_coord_n(index)
+        elif isinstance(key, slice):
+            geoms = [self.__get_coord_n(index) for index in range(*key.indices(length))]
+            return geoms
+        else:
+            raise TypeError("geometry sequence indices must be integers or slices, not {}".format(key.__class__.__name__))
 
 class GeometryCollectionBase(Geometry):
     @property
@@ -129,7 +169,6 @@ class GeometrySequence:
 
     def __iter__(self):
         for n in range(0, len(self)):
-            print(n)
             yield wrap_geom(lib.sfcgal_geometry_collection_geometry_n(self._parent._geom, n), owned=False)
 
     def __len__(self):
