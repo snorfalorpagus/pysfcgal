@@ -53,6 +53,20 @@ def test_intersection_polygon_polygon():
     assert(polygon3.area == 1.0)
     # TODO: check coordinates
 
+def test_point():
+    point1 = Point(4,5,6)
+    assert(point1.x == 4.0)
+    assert(point1.y == 5.0)
+    assert(point1.z == 6.0)
+    assert(point1.has_z)
+
+    point2 = Point(4,5)
+    assert(point2.x == 4.0)
+    assert(point2.y == 5.0)
+    with pytest.raises(sfcgal.DimensionError):
+        z = point2.z
+    assert(not point2.has_z)
+
 def test_line_string():
     line = LineString([(0,0), (0, 1), (1, 1.5), (1, 2)])
     assert(len(line) == 4)

@@ -3,6 +3,9 @@ from ._sfcgal import ffi, lib
 # this must be called before anything else
 lib.sfcgal_init()
 
+class DimensionError(Exception):
+    pass
+
 def sfcgal_version():
     """Returns the version string of SFCGAL"""
     version = ffi.string(lib.sfcgal_version()).decode("utf-8")
@@ -50,6 +53,10 @@ class Geometry:
         return locals()
     is_empty = property(**is_empty())
 
+    @property
+    def has_z(self):
+        return lib.sfcgal_geometry_is_3d(self._geom) == 1
+
     def intersects(self, other):
         return lib.sfcgal_geometry_intersects(self._geom, other._geom) == 1
 
@@ -78,17 +85,20 @@ class Point(Geometry):
         else:
             self._geom = point_from_coordinates([x, y, z])
 
-    def x():
-        def fget(self):
-            return lib.sfcgal_point_x(self._geom)
-        return locals()
-    x = property(**x())
+    @property
+    def x(self):
+        return lib.sfcgal_point_x(self._geom)
 
-    def y():
-        def fget(self):
-            return lib.sfcgal_point_y(self._geom)
-        return locals()
-    y = property(**y())
+    @property
+    def y(self):
+        return lib.sfcgal_point_y(self._geom)
+
+    @property
+    def z(self):
+        if lib.sfcgal_geometry_is_3d(self._geom):
+            return lib.sfcgal_point_z(self._geom)
+        else:
+            raise DimensionError("This point has no z coordinate.")
 
 class LineString(Geometry):
     def __init__(self, coords):
