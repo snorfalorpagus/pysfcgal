@@ -2,8 +2,8 @@ language: python
 sudo: true
 
 before_install:
-  - apt-get update
-  - apt-get install libcgal-dev
+  - sudo apt-get update
+  - sudo apt-get install libcgal-dev
   # build sfcgal from source, as it's not available from apt
   - curl -L -o sfcgal.tar.gz https://github.com/Oslandia/SFCGAL/archive/v1.3.5.tar.gz
   - tar vxfz sfcgal.tar.gz
